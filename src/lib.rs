@@ -1,3 +1,4 @@
+#![doc = include_str!("../README.md")]
 use quote::ToTokens;
 use syn::punctuated::Punctuated;
 use syn::token;
@@ -30,6 +31,7 @@ impl syn::parse::Parse for IdentList {
 ///     Self::default()
 ///   }
 ///   fn other(&self) -> String {
+///     // You have to use context here instead of self, because we don't change macro contents
 ///     format!("{context:?}")
 ///   }
 /// }
