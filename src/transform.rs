@@ -1,3 +1,5 @@
+use core::panic;
+
 use crate::{dummy::generate_dummy_impl, mac::generate_impl_macro};
 
 use super::change_self::ChangeSelfToContext;
@@ -11,7 +13,7 @@ use syn::{
     token::{Brace, Bracket, Mod, Paren, Pound, Pub, Where},
     AttrStyle, Attribute, GenericParam, Generics, Ident, ImplItem, ImplItemConst, ImplItemFn,
     ImplItemType, Item, ItemConst, ItemFn, ItemImpl, ItemMod, ItemType, MetaList, Path, ReturnType,
-    TypeParam, Visibility, WhereClause,
+    Type, TypeParam, Visibility, WhereClause,
 };
 
 pub fn transform(imp: ItemImpl, use_dummy: bool, use_macro: bool) -> ItemMod {
@@ -62,24 +64,26 @@ pub fn transform(imp: ItemImpl, use_dummy: bool, use_macro: bool) -> ItemMod {
         }),
     });
 
-    let ty_span = self_ty.span();
-    let ty = self_ty.to_token_stream().to_string();
-    let ty = Ident::new(&ty, ty_span);
+    let ty = trait_.expect("Impl names are neccesary").1;
+    let Type::Path(syn::TypePath {
+        qself: None,
+        path: trait_,
+    }) = *self_ty
+    else {
+        panic!("Type name has to be a Path")
+    };
+    assert!(ty.segments.len() == 1, "Impl names have to be Idents");
+    let ty = ty.segments[0].ident.clone();
 
     // Dummy Impl (for errors)
     #[cfg(feature = "dummy")]
     if use_dummy {
         processed.push(parse_quote! {struct Dummy;});
-        processed.push(generate_dummy_impl(copy.clone()));
+        processed.push(generate_dummy_impl(copy.clone(), trait_.clone()));
     }
     #[cfg(feature = "macro")]
     if use_macro {
-        processed.push({
-            let (None, trait_, _) = trait_.expect("No Trait chosen to implement for.") else {
-                panic!("Can't implement for !Trait");
-            };
-            generate_impl_macro(copy, &ty, &mut folder, trait_)
-        });
+        processed.push(generate_impl_macro(copy, &ty, &mut folder, trait_));
     }
 
     ItemMod {

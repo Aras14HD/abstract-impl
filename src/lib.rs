@@ -26,7 +26,7 @@ impl syn::parse::Parse for IdentList {
 /// #   fn other(&self) -> String;
 /// # }
 /// #[abstract_impl]
-/// impl SomeTrait for Impl where Self: Default + std::fmt::Debug {
+/// impl Impl for SomeTrait where Self: Default + std::fmt::Debug {
 ///   fn some() -> Self {
 ///     Self::default()
 ///   }

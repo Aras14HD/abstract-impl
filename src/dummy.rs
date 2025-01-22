@@ -2,15 +2,16 @@ use proc_macro2::Span;
 use syn::{
     parse_quote,
     punctuated::Punctuated,
-    token::{Brace, Paren},
+    token::{Brace, For, Paren},
     Block, Ident, ImplItem, Item, ItemImpl, Path, Stmt, Type, TypePath, TypeTuple,
 };
 
-pub fn generate_dummy_impl(mut imp: ItemImpl) -> Item {
+pub fn generate_dummy_impl(mut imp: ItemImpl, trait_: Path) -> Item {
     imp.self_ty = Box::new(Type::Path(TypePath {
         qself: None,
         path: Path::from(Ident::new("Dummy", Span::call_site())),
     }));
+    imp.trait_ = Some((None, trait_, For::default()));
 
     let dummy_body: syn::Expr = parse_quote! {
         unreachable!()

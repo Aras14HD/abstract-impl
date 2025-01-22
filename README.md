@@ -27,7 +27,7 @@ mod impls {
     use super::*;
 
     #[abstract_impl]
-    impl FormatToString for FormatUsingDebug
+    impl FormatUsingDebug for FormatToString
     where
         Self: std::fmt::Debug,
     {
@@ -43,7 +43,7 @@ mod impls {
         FormatErr(FormatErr),
     }
     #[abstract_impl]
-    impl Print for PrintUsingFormat
+    impl PrintUsingFormat for Print
     where
         Self: FormatToString,
     {
@@ -54,14 +54,14 @@ mod impls {
         }
     }
     #[abstract_impl]
-    impl Print for PrintDummy {
+    impl PrintDummy for Print {
         type Error = ();
         fn print(&self) -> Result<(), ()> {
             Ok(println!("Hi"))
         }
     }
     #[abstract_impl(no_dummy)]
-    impl std::cmp::PartialOrd for PartialUsingOrd
+    impl PartialUsingOrd for std::cmp::PartialOrd
     where
         Self: Ord,
     {
