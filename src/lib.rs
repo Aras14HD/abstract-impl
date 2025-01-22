@@ -22,18 +22,21 @@ impl syn::parse::Parse for IdentList {
 /// # use abstract_impl::abstract_impl;
 /// # trait SomeTrait {
 /// #   fn some() -> Self;
-/// #   fn other(&self);
+/// #   fn other(&self) -> String;
 /// # }
 /// #[abstract_impl]
 /// impl SomeTrait for Impl where Self: Default + std::fmt::Debug {
 ///   fn some() -> Self {
 ///     Self::default()
 ///   }
-///   fn other(&self) {
-///     println!("{context:?}")
+///   fn other(&self) -> String {
+///     format!("{context:?}")
 ///   }
 /// }
-/// # fn main() {}
+/// impl_Impl!(());
+/// # fn main() {
+/// # assert_eq!("()", <()>::some().other());
+/// # }
 /// ```
 #[proc_macro_attribute]
 pub fn abstract_impl(
@@ -48,9 +51,4 @@ pub fn abstract_impl(
         attrs.iter().all(|attr| attr.to_string() != "no_macro"),
     );
     res.to_token_stream().into()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
 }
