@@ -1,0 +1,18 @@
+[package]
+name = "abstract-impl"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+proc-macro2 = "1.0.93"
+quote = "1.0.38"
+syn = { version = "2.0.96", features = ["full", "fold"] }
+
+[lib]
+proc-macro = true
+
+[features]
+default = ["dummy", "macro"]
+dummy = []
+macro = []
+
