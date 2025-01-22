@@ -1,5 +1,12 @@
 [package]
 name = "abstract-impl"
+description = "Create abstract implementations for traits"
+homepage = "https://github.com/Aras14HD/abstract-impl"
+repository = "https://github.com/Aras14HD/abstract-impl"
+readme = "README.md"
+keywords = ["abstract", "generic", "implementation", "traits", "macro"]
+categories = ["development-tools", "rust-patterns"]
+license-file = "LICENSE"
 version = "0.1.0"
 edition = "2021"
 
