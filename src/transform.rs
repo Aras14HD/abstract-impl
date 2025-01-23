@@ -16,7 +16,7 @@ use syn::{
     Type, TypeParam, Visibility, WhereClause,
 };
 
-pub fn transform(imp: ItemImpl, use_dummy: bool, use_macro: bool) -> ItemMod {
+pub fn transform(imp: ItemImpl, use_dummy: bool, use_macro: bool, legacy_order: bool) -> ItemMod {
     let copy = imp.clone();
     let ItemImpl {
         mut attrs,
@@ -64,13 +64,19 @@ pub fn transform(imp: ItemImpl, use_dummy: bool, use_macro: bool) -> ItemMod {
         }),
     });
 
-    let ty = trait_.expect("Impl names are neccesary").1;
+    let trait_ = trait_.expect("Impl names are neccesary").1;
     let Type::Path(syn::TypePath {
         qself: None,
-        path: trait_,
+        path: ty,
     }) = *self_ty
     else {
         panic!("Type name has to be a Path")
+    };
+    #[cfg(feature = "impl_name_first")]
+    let (ty, trait_) = if !legacy_order {
+        (trait_, ty)
+    } else {
+        (ty, trait_)
     };
     assert!(ty.segments.len() == 1, "Impl names have to be Idents");
     let ty = ty.segments[0].ident.clone();

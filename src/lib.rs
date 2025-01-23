@@ -51,6 +51,7 @@ pub fn abstract_impl(
         parsed,
         attrs.iter().all(|attr| attr.to_string() != "no_dummy"),
         attrs.iter().all(|attr| attr.to_string() != "no_macro"),
+        attrs.iter().any(|attr| attr.to_string() == "legacy_order"),
     );
     res.to_token_stream().into()
 }

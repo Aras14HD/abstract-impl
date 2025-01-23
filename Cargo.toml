@@ -19,7 +19,8 @@ syn = { version = "2.0.96", features = ["full", "fold"] }
 proc-macro = true
 
 [features]
-default = ["dummy", "macro"]
+default = ["dummy", "macro", "impl_name_first"]
 dummy = []
 macro = []
+impl_name_first = []
 
