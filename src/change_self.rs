@@ -1,7 +1,8 @@
+use proc_macro2::Span;
 use syn::{
     fold::Fold,
     spanned::Spanned,
-    token::{Colon, Gt, Lt, PathSep},
+    token::{Colon, Gt, Lt, Mut, PathSep, SelfValue},
     AngleBracketedGenericArguments, FnArg, GenericArgument, Ident, Pat, PatIdent, PatType, Path,
     PathArguments, PathSegment, Receiver, Type, TypePath, TypeReference,
 };
@@ -38,45 +39,8 @@ impl Fold for ChangeSelfToContext {
                     let span = seg.ident.span();
                     i.segments = i.segments.into_iter().skip(1).collect();
                     if *has_generics {
-                        i.segments[0].arguments = match i.segments[0].arguments.clone() {
-                            PathArguments::AngleBracketed(mut args) => {
-                                args.args = [GenericArgument::Type(Type::Path(TypePath {
-                                    qself: None,
-                                    path: Path {
-                                        leading_colon: None,
-                                        segments: [PathSegment {
-                                            ident: Ident::new("Context", span),
-                                            arguments: PathArguments::None,
-                                        }]
-                                        .into_iter()
-                                        .collect(),
-                                    },
-                                }))]
-                                .into_iter()
-                                .chain(args.args)
-                                .collect();
-                                PathArguments::AngleBracketed(args)
-                            }
-                            _ => PathArguments::AngleBracketed(AngleBracketedGenericArguments {
-                                colon2_token: Some(PathSep::default()),
-                                lt_token: Lt::default(),
-                                args: [GenericArgument::Type(Type::Path(TypePath {
-                                    qself: None,
-                                    path: Path {
-                                        leading_colon: None,
-                                        segments: [PathSegment {
-                                            ident: Ident::new("Context", span),
-                                            arguments: PathArguments::None,
-                                        }]
-                                        .into_iter()
-                                        .collect(),
-                                    },
-                                }))]
-                                .into_iter()
-                                .collect(),
-                                gt_token: Gt::default(),
-                            }),
-                        }
+                        i.segments[0].arguments =
+                            prepend_context_generic(i.segments[0].arguments.clone(), span);
                     }
                 }
             }
@@ -98,50 +62,99 @@ impl Fold for ChangeSelfToContext {
                 ..
             }) => {
                 self.replaced = true;
-                FnArg::Typed(PatType {
-                    attrs,
-                    pat: Box::new(Pat::Ident(PatIdent {
-                        attrs: vec![],
-                        by_ref: None,
-                        mutability,
-                        ident: Ident::new("context", self_token.span()),
-                        subpat: None,
-                    })),
-                    colon_token: Colon::default(),
-                    ty: Box::new(match reference {
-                        Some((and, lifetime)) => Type::Reference(TypeReference {
-                            and_token: and,
-                            lifetime,
-                            mutability,
-                            elem: Box::new(Type::Path(TypePath {
-                                qself: None,
-                                path: Path {
-                                    leading_colon: None,
-                                    segments: [PathSegment {
-                                        ident: Ident::new("Context", self_token.span()),
-                                        arguments: syn::PathArguments::None,
-                                    }]
-                                    .into_iter()
-                                    .collect(),
-                                },
-                            })),
-                        }),
-                        None => Type::Path(TypePath {
-                            qself: None,
-                            path: Path {
-                                leading_colon: None,
-                                segments: [PathSegment {
-                                    ident: Ident::new("Context", self_token.span()),
-                                    arguments: syn::PathArguments::None,
-                                }]
-                                .into_iter()
-                                .collect(),
-                            },
-                        }),
-                    }),
-                })
+                FnArg::Typed(replace_reciever(attrs, reference, mutability, self_token))
             }
             FnArg::Typed(t) => FnArg::Typed(self.fold_pat_type(t)),
         }
+    }
+}
+fn prepend_context_generic(arguments: PathArguments, span: Span) -> PathArguments {
+    match arguments {
+        PathArguments::AngleBracketed(mut args) => {
+            args.args = [GenericArgument::Type(Type::Path(TypePath {
+                qself: None,
+                path: Path {
+                    leading_colon: None,
+                    segments: [PathSegment {
+                        ident: Ident::new("Context", span),
+                        arguments: PathArguments::None,
+                    }]
+                    .into_iter()
+                    .collect(),
+                },
+            }))]
+            .into_iter()
+            .chain(args.args)
+            .collect();
+            PathArguments::AngleBracketed(args)
+        }
+        _ => PathArguments::AngleBracketed(AngleBracketedGenericArguments {
+            colon2_token: Some(PathSep::default()),
+            lt_token: Lt::default(),
+            args: [GenericArgument::Type(Type::Path(TypePath {
+                qself: None,
+                path: Path {
+                    leading_colon: None,
+                    segments: [PathSegment {
+                        ident: Ident::new("Context", span),
+                        arguments: PathArguments::None,
+                    }]
+                    .into_iter()
+                    .collect(),
+                },
+            }))]
+            .into_iter()
+            .collect(),
+            gt_token: Gt::default(),
+        }),
+    }
+}
+fn replace_reciever(
+    attrs: Vec<syn::Attribute>,
+    reference: Option<(syn::token::And, Option<syn::Lifetime>)>,
+    mutability: Option<Mut>,
+    self_token: SelfValue,
+) -> PatType {
+    PatType {
+        attrs,
+        pat: Box::new(Pat::Ident(PatIdent {
+            attrs: vec![],
+            by_ref: None,
+            mutability,
+            ident: Ident::new("context", self_token.span()),
+            subpat: None,
+        })),
+        colon_token: Colon::default(),
+        ty: Box::new(match reference {
+            Some((and, lifetime)) => Type::Reference(TypeReference {
+                and_token: and,
+                lifetime,
+                mutability,
+                elem: Box::new(Type::Path(TypePath {
+                    qself: None,
+                    path: Path {
+                        leading_colon: None,
+                        segments: [PathSegment {
+                            ident: Ident::new("Context", self_token.span()),
+                            arguments: syn::PathArguments::None,
+                        }]
+                        .into_iter()
+                        .collect(),
+                    },
+                })),
+            }),
+            None => Type::Path(TypePath {
+                qself: None,
+                path: Path {
+                    leading_colon: None,
+                    segments: [PathSegment {
+                        ident: Ident::new("Context", self_token.span()),
+                        arguments: syn::PathArguments::None,
+                    }]
+                    .into_iter()
+                    .collect(),
+                },
+            }),
+        }),
     }
 }
