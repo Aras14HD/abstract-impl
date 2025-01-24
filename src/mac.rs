@@ -22,127 +22,9 @@ pub fn generate_impl_macro(
         .items
         .into_iter()
         .map(|item| match item {
-            ImplItem::Const(mut c) => {
-                c.ty = Type::Path(TypePath {
-                    qself: None,
-                    path: Path {
-                        leading_colon: None,
-                        segments: [
-                            PathSegment {
-                                ident: ty.clone(),
-                                arguments: PathArguments::None,
-                            },
-                            PathSegment {
-                                ident: c.ident.clone(),
-                                arguments: PathArguments::AngleBracketed(
-                                    AngleBracketedGenericArguments {
-                                        colon2_token: None,
-                                        lt_token: Lt::default(),
-                                        args: generic_to_arg(c.generics.clone(), true),
-                                        gt_token: Gt::default(),
-                                    },
-                                ),
-                            },
-                        ]
-                        .into_iter()
-                        .collect(),
-                    },
-                });
-                ImplItem::Const(c)
-            }
-            ImplItem::Fn(mut f) => {
-                let args = f
-                    .sig
-                    .inputs
-                    .iter()
-                    .map(|inp| match inp {
-                        FnArg::Receiver(Receiver { self_token, .. }) => Expr::Path(ExprPath {
-                            attrs: vec![],
-                            qself: None,
-                            path: Path::from(Ident::new("self", self_token.span())),
-                        }),
-                        FnArg::Typed(PatType { pat, .. }) => pat_to_expr(*pat.clone()).remove(0),
-                    })
-                    .collect();
-                f.block.stmts = vec![Stmt::Expr(
-                    Expr::Call(syn::ExprCall {
-                        attrs: vec![],
-                        func: Box::new(Expr::Path(ExprPath {
-                            attrs: vec![],
-                            qself: None,
-                            path: Path {
-                                leading_colon: None,
-                                segments: [
-                                    PathSegment {
-                                        ident: ty.clone(),
-                                        arguments: PathArguments::None,
-                                    },
-                                    PathSegment {
-                                        ident: f.sig.ident.clone(),
-                                        arguments: PathArguments::AngleBracketed(
-                                            AngleBracketedGenericArguments {
-                                                colon2_token: Some(PathSep::default()),
-                                                lt_token: Lt::default(),
-                                                args: generic_to_arg(f.sig.generics.clone(), true),
-                                                gt_token: Gt::default(),
-                                            },
-                                        ),
-                                    },
-                                ]
-                                .into_iter()
-                                .collect(),
-                            },
-                        })),
-                        paren_token: Paren::default(),
-                        args,
-                    }),
-                    None,
-                )];
-                ImplItem::Fn(f)
-            }
-            ImplItem::Type(mut t) => {
-                t.ty = Type::Path(TypePath {
-                    qself: None,
-                    path: Path {
-                        leading_colon: None,
-                        segments: [
-                            PathSegment {
-                                ident: ty.clone(),
-                                arguments: PathArguments::None,
-                            },
-                            PathSegment {
-                                ident: t.ident.clone(),
-                                arguments: {
-                                    let args = generic_to_arg(
-                                        t.generics.clone(),
-                                        folder
-                                            .local_idents
-                                            .iter()
-                                            .find(|i| i.0 == t.ident)
-                                            .map(|i| i.1)
-                                            .unwrap_or(false),
-                                    );
-                                    if args.is_empty() {
-                                        PathArguments::None
-                                    } else {
-                                        PathArguments::AngleBracketed(
-                                            AngleBracketedGenericArguments {
-                                                colon2_token: Some(PathSep::default()),
-                                                lt_token: Lt::default(),
-                                                args,
-                                                gt_token: Gt::default(),
-                                            },
-                                        )
-                                    }
-                                },
-                            },
-                        ]
-                        .into_iter()
-                        .collect(),
-                    },
-                });
-                ImplItem::Type(t)
-            }
+            ImplItem::Const(c) => generate_const(c, ty.clone()),
+            ImplItem::Fn(f) => generate_fn(f, ty.clone()),
+            ImplItem::Type(t) => generate_type(t, ty.clone(), folder),
             other => other,
         })
         .collect::<Box<_>>();
@@ -168,6 +50,130 @@ pub fn generate_impl_macro(
         },
         semi_token: None,
     })
+}
+
+fn generate_type(
+    mut t: syn::ImplItemType,
+    ty: Ident,
+    folder: &mut ChangeSelfToContext,
+) -> ImplItem {
+    t.ty = Type::Path(TypePath {
+        qself: None,
+        path: Path {
+            leading_colon: None,
+            segments: [
+                PathSegment {
+                    ident: ty,
+                    arguments: PathArguments::None,
+                },
+                PathSegment {
+                    ident: t.ident.clone(),
+                    arguments: {
+                        let args = generic_to_arg(
+                            t.generics.clone(),
+                            folder
+                                .local_idents
+                                .iter()
+                                .find(|i| i.0 == t.ident)
+                                .map(|i| i.1)
+                                .unwrap_or(false),
+                        );
+                        if args.is_empty() {
+                            PathArguments::None
+                        } else {
+                            PathArguments::AngleBracketed(AngleBracketedGenericArguments {
+                                colon2_token: Some(PathSep::default()),
+                                lt_token: Lt::default(),
+                                args,
+                                gt_token: Gt::default(),
+                            })
+                        }
+                    },
+                },
+            ]
+            .into_iter()
+            .collect(),
+        },
+    });
+    ImplItem::Type(t)
+}
+
+fn generate_fn(mut f: syn::ImplItemFn, ty: Ident) -> ImplItem {
+    let args = f
+        .sig
+        .inputs
+        .iter()
+        .map(|inp| match inp {
+            FnArg::Receiver(Receiver { self_token, .. }) => Expr::Path(ExprPath {
+                attrs: vec![],
+                qself: None,
+                path: Path::from(Ident::new("self", self_token.span())),
+            }),
+            FnArg::Typed(PatType { pat, .. }) => pat_to_expr(*pat.clone()).remove(0),
+        })
+        .collect();
+    f.block.stmts = vec![Stmt::Expr(
+        Expr::Call(syn::ExprCall {
+            attrs: vec![],
+            func: Box::new(Expr::Path(ExprPath {
+                attrs: vec![],
+                qself: None,
+                path: Path {
+                    leading_colon: None,
+                    segments: [
+                        PathSegment {
+                            ident: ty,
+                            arguments: PathArguments::None,
+                        },
+                        PathSegment {
+                            ident: f.sig.ident.clone(),
+                            arguments: PathArguments::AngleBracketed(
+                                AngleBracketedGenericArguments {
+                                    colon2_token: Some(PathSep::default()),
+                                    lt_token: Lt::default(),
+                                    args: generic_to_arg(f.sig.generics.clone(), true),
+                                    gt_token: Gt::default(),
+                                },
+                            ),
+                        },
+                    ]
+                    .into_iter()
+                    .collect(),
+                },
+            })),
+            paren_token: Paren::default(),
+            args,
+        }),
+        None,
+    )];
+    ImplItem::Fn(f)
+}
+
+fn generate_const(mut c: syn::ImplItemConst, ty: Ident) -> ImplItem {
+    c.ty = Type::Path(TypePath {
+        qself: None,
+        path: Path {
+            leading_colon: None,
+            segments: [
+                PathSegment {
+                    ident: ty,
+                    arguments: PathArguments::None,
+                },
+                PathSegment {
+                    ident: c.ident.clone(),
+                    arguments: PathArguments::AngleBracketed(AngleBracketedGenericArguments {
+                        colon2_token: None,
+                        lt_token: Lt::default(),
+                        args: generic_to_arg(c.generics.clone(), true),
+                        gt_token: Gt::default(),
+                    }),
+                },
+            ]
+            .into_iter()
+            .collect(),
+        },
+    });
+    ImplItem::Const(c)
 }
 
 fn generic_to_arg(generics: Generics, prepend_self: bool) -> Punctuated<GenericArgument, Comma> {
