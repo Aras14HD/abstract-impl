@@ -148,7 +148,7 @@ trait HasType<T> {
 trait FormatType<T> {
     fn format_type(self) -> String;
 }
-#[abstract_impl(no_macro)]
+#[abstract_impl]
 impl FormatField<T> for FormatType<T> where Self: HasType<T>, T: ToString {
     fn format_type(self) -> String {
         format!("{}", context.get_type().to_string())
@@ -160,11 +160,7 @@ impl HasType<u8> for Test {
         self.0
     }
 }
-impl FormatType<u8> for Test {
-    fn format_type(self) -> String {
-        FormatField::format_type::<Self, u8>(self)
-    }
-}
+impl_FormatField!(<u8> Test);
 fn main() {}
 ```
 ### No Macro

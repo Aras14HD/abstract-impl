@@ -1,6 +1,9 @@
+use std::collections::HashMap;
+
 use proc_macro2::Span;
-use quote::quote;
+use quote::{quote, ToTokens};
 use syn::{
+    fold::Fold,
     punctuated::Punctuated,
     spanned::Spanned,
     token::{Brace, Bracket, Comma, Gt, Lt, Not, Paren, PathSep, Pound},
@@ -20,25 +23,80 @@ pub fn generate_impl_macro(
     generics: Generics,
     ty_generics: Punctuated<GenericArgument, Comma>,
 ) -> Item {
-    if !ty_generics.is_empty() {
-        todo!("Macro support for Impl-Generics is planned");
-    }
+    let external_types: Box<[_]> = ty_generics
+        .iter()
+        .map(|x| {
+            Expr::Verbatim(
+                format!("${}:ty", x.into_token_stream().to_string().to_lowercase())
+                    .parse()
+                    .unwrap(),
+            )
+        })
+        .collect();
+    let external_types_use: Box<[_]> = ty_generics
+        .iter()
+        .map(|x| {
+            Expr::Verbatim(
+                format!("${}", x.into_token_stream().to_string().to_lowercase())
+                    .parse()
+                    .unwrap(),
+            )
+        })
+        .collect();
+    let new_ty_generics = ty_generics
+        .iter()
+        .cloned()
+        .map(|mut x| {
+            if let GenericArgument::Type(Type::Path(p)) = &mut x {
+                p.path.segments[0].ident = Ident::new(
+                    &format!("_impl_{ty}_{}", p.path.segments[0].ident),
+                    p.path.segments[0].ident.span(),
+                )
+            }
+            x
+        })
+        .collect::<Box<_>>();
     let items = imp
         .items
         .into_iter()
         .map(|item| match item {
             ImplItem::Const(c) => {
-                generate_const(c, ty.clone(), generics.clone(), ty_generics.clone())
+                generate_const(c, ty.clone(), generics.clone(), new_ty_generics.clone())
             }
-            ImplItem::Fn(f) => generate_fn(f, ty.clone(), generics.clone(), ty_generics.clone()),
-            ImplItem::Type(t) => {
-                generate_type(t, ty.clone(), generics.clone(), ty_generics.clone(), folder)
+            ImplItem::Fn(f) => {
+                generate_fn(f, ty.clone(), generics.clone(), new_ty_generics.clone())
             }
+            ImplItem::Type(t) => generate_type(
+                t,
+                ty.clone(),
+                generics.clone(),
+                new_ty_generics.clone(),
+                folder,
+            ),
             other => other,
         })
         .collect::<Box<_>>();
     let gens = generics.params;
-    let where_clause = generics.where_clause;
+    let mut replace_ident = ReplaceIdents(
+        ty_generics
+            .iter()
+            .zip(new_ty_generics.iter())
+            .filter_map(|args| match args {
+                (
+                    GenericArgument::Type(Type::Path(old)),
+                    GenericArgument::Type(Type::Path(new)),
+                ) => Some((
+                    old.path.segments[0].ident.to_string(),
+                    new.path.segments[0].ident.to_string(),
+                )),
+                _ => None,
+            })
+            .collect(),
+    );
+    let where_clause = generics
+        .where_clause
+        .map(|w| replace_ident.fold_where_clause(w));
+    let trait_ = replace_ident.fold_path(trait_);
     Item::Macro(ItemMacro {
         attrs: vec![Attribute {
             pound_token: Pound::default(),
@@ -51,12 +109,23 @@ pub fn generate_impl_macro(
             path: Path::from(Ident::new("macro_rules", Span::call_site())),
             bang_token: Not::default(),
             delimiter: syn::MacroDelimiter::Brace(Brace::default()),
-            tokens: quote! {
-                ($t:ty) => {
-                    impl<#gens> #trait_ for $t #where_clause {
-                        #(#items)*
+            tokens: if external_types.is_empty() {
+                quote! {
+                    ($t:ty) => {
+                        impl<#gens> #trait_ for $t #where_clause {
+                            #(#items)*
+                        }
+                    };
+                }
+            } else {
+                quote! {
+                    (<#(#external_types),*> $ty:ty) => {
+                        #(type #new_ty_generics = #external_types_use;)*
+                        impl<#gens> #trait_ for $ty #where_clause {
+                            #(#items)*
+                        }
                     }
-                };
+                }
             },
         },
         semi_token: None,
@@ -67,7 +136,7 @@ fn generate_type(
     mut t: syn::ImplItemType,
     ty: Ident,
     generics: Generics,
-    ty_generics: Punctuated<GenericArgument, Comma>,
+    ty_generics: Box<[GenericArgument]>,
     folder: &mut ChangeSelfToContext,
 ) -> ImplItem {
     t.ty = Type::Path(TypePath {
@@ -117,7 +186,7 @@ fn generate_fn(
     mut f: syn::ImplItemFn,
     ty: Ident,
     generics: Generics,
-    ty_generics: Punctuated<GenericArgument, Comma>,
+    ty_generics: Box<[GenericArgument]>,
 ) -> ImplItem {
     let args = f
         .sig
@@ -178,7 +247,7 @@ fn generate_const(
     mut c: syn::ImplItemConst,
     ty: Ident,
     generics: Generics,
-    ty_generics: Punctuated<GenericArgument, Comma>,
+    ty_generics: Box<[GenericArgument]>,
 ) -> ImplItem {
     c.ty = Type::Path(TypePath {
         qself: None,
@@ -210,7 +279,7 @@ fn generic_to_arg(
     generics: Generics,
     prepend_self: bool,
     append_generics: Generics,
-    ty_generics: Punctuated<GenericArgument, Comma>,
+    ty_generics: Box<[GenericArgument]>,
 ) -> Punctuated<GenericArgument, Comma> {
     prepend_self
         .then_some(GenericArgument::Type(Type::Path(TypePath {
@@ -294,5 +363,16 @@ fn pat_to_expr(pat: Pat) -> Vec<Expr> {
         Pat::Type(PatType { pat, .. }) => pat_to_expr(*pat),
         Pat::Verbatim(v) => vec![Expr::Verbatim(v)],
         _ => vec![],
+    }
+}
+
+struct ReplaceIdents(HashMap<String, String>);
+
+impl syn::fold::Fold for ReplaceIdents {
+    fn fold_ident(&mut self, i: proc_macro2::Ident) -> proc_macro2::Ident {
+        let Some(out) = self.0.get(&i.to_string()) else {
+            return i;
+        };
+        Ident::new(out, i.span())
     }
 }
