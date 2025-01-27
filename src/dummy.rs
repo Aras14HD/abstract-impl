@@ -5,8 +5,7 @@ use syn::{
     parse_quote,
     punctuated::Punctuated,
     token::{Brace, Comma, For, Paren},
-    Block, GenericArgument, Ident, ImplItem, Item, ItemImpl, LifetimeParam, Path, Stmt, Type,
-    TypePath, TypeTuple,
+    Block, GenericArgument, Ident, ImplItem, Item, ItemImpl, Path, Stmt, Type, TypePath, TypeTuple,
 };
 
 pub fn generate_dummy_impl(

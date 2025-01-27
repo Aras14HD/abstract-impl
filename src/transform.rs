@@ -1,17 +1,15 @@
 use core::panic;
-use std::any::Any;
 
 use crate::{dummy::generate_dummy_impl, mac::generate_impl_macro};
 
 use super::change_self::ChangeSelfToContext;
 use proc_macro2::Span;
-use quote::{quote, ToTokens};
+use quote::quote;
 use syn::{
     fold::Fold,
     parse_quote,
     punctuated::Punctuated,
-    spanned::Spanned,
-    token::{Brace, Bracket, Colon, Comma, Const, Mod, Paren, Pound, Pub, Where},
+    token::{Brace, Bracket, Comma, Mod, Paren, Pound, Pub, Where},
     AttrStyle, Attribute, GenericArgument, GenericParam, Generics, Ident, ImplItem, ImplItemConst,
     ImplItemFn, ImplItemType, Item, ItemConst, ItemFn, ItemImpl, ItemMod, ItemType, MetaList, Path,
     PathArguments, ReturnType, Type, TypeParam, Visibility, WhereClause,
