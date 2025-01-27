@@ -114,6 +114,21 @@ fn main() {
     .unwrap();
 }
 ```
+### Trait-Generics
+You can make implementations over generic traits.
+```rust
+use abstract_impl::abstract_impl;
+trait HasType<T> {
+    fn get_type(self) -> T;
+}
+#[abstract_impl(no_dummy)]
+impl<T> IntoField for Into<T> where Self: HasType<T> {
+    fn into(self) -> T {
+        self.get_type()
+    }
+}
+fn main() {}
+```
 ### No Macro
 Sometimes the impl_Impl macros might not be desired.
 In that case it may be disabled with the `no_macro` option.

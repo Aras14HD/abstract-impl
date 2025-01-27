@@ -36,7 +36,6 @@ pub fn transform(imp: ItemImpl, use_dummy: bool, use_macro: bool, legacy_order: 
             _ => None,
         })
         .collect::<Box<_>>();
-    let where_clause = generics.where_clause.clone();
     let mut folder = ChangeSelfToContext {
         local_idents,
         replaced: false,
@@ -45,9 +44,9 @@ pub fn transform(imp: ItemImpl, use_dummy: bool, use_macro: bool, legacy_order: 
     let mut processed: Vec<Item> = items
         .into_iter()
         .map(|item| match item {
-            ImplItem::Const(c) => process_const(c, where_clause.clone(), &mut folder),
-            ImplItem::Fn(f) => process_fn(f, where_clause.clone(), &mut folder),
-            ImplItem::Type(t) => process_type(t, where_clause.clone(), &mut folder),
+            ImplItem::Const(c) => process_const(c, generics.clone(), &mut folder),
+            ImplItem::Fn(f) => process_fn(f, generics.clone(), &mut folder),
+            ImplItem::Type(t) => process_type(t, generics.clone(), &mut folder),
             _ => panic!("abstract impl can only contain functions/methods and types!"),
         })
         .collect();
@@ -105,7 +104,7 @@ pub fn transform(imp: ItemImpl, use_dummy: bool, use_macro: bool, legacy_order: 
 
 fn process_type(
     t: ImplItemType,
-    where_clause: Option<WhereClause>,
+    append_generics: Generics,
     folder: &mut ChangeSelfToContext,
 ) -> Item {
     let ImplItemType {
@@ -129,7 +128,7 @@ fn process_type(
             syn::GenericParam::Type(TypeParam::from(Ident::new("Context", Span::mixed_site()))),
         );
 
-        generics = process_generics(generics, where_clause, folder);
+        generics = process_generics(generics, append_generics, folder);
     } else {
         folder
             .local_idents
@@ -151,11 +150,7 @@ fn process_type(
     })
 }
 
-fn process_fn(
-    f: ImplItemFn,
-    where_clause: Option<WhereClause>,
-    folder: &mut ChangeSelfToContext,
-) -> Item {
+fn process_fn(f: ImplItemFn, generics: Generics, folder: &mut ChangeSelfToContext) -> Item {
     let ImplItemFn {
         attrs,
         mut sig,
@@ -168,7 +163,7 @@ fn process_fn(
         syn::GenericParam::Type(TypeParam::from(Ident::new("Context", Span::mixed_site()))),
     );
 
-    sig.generics = process_generics(sig.generics, where_clause, folder);
+    sig.generics = process_generics(sig.generics, generics, folder);
     // change Self (to local or Context)
     sig.inputs = sig
         .inputs
@@ -195,7 +190,7 @@ fn process_fn(
 
 fn process_const(
     c: ImplItemConst,
-    where_clause: Option<WhereClause>,
+    append_generics: Generics,
     folder: &mut ChangeSelfToContext,
 ) -> Item {
     let ImplItemConst {
@@ -211,7 +206,7 @@ fn process_const(
         ..
     } = c;
 
-    generics = process_generics(generics, where_clause, folder);
+    generics = process_generics(generics, append_generics, folder);
     // change Self (to local or Context)
     expr = folder.fold_expr(expr);
 
@@ -231,10 +226,10 @@ fn process_const(
 
 fn process_generics(
     mut generics: Generics,
-    where_clause: Option<WhereClause>,
+    append_generics: Generics,
     folder: &mut ChangeSelfToContext,
 ) -> Generics {
-    if let Some(where_clause) = where_clause {
+    if let Some(where_clause) = append_generics.where_clause {
         generics.where_clause = Some(WhereClause {
             where_token: Where::default(),
             predicates: generics
@@ -257,6 +252,7 @@ fn process_generics(
             }
             other => other,
         })
+        .chain(append_generics.params)
         .collect();
     generics.where_clause = generics.where_clause.map(|mut w| {
         w.predicates = w
