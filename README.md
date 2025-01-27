@@ -121,10 +121,48 @@ use abstract_impl::abstract_impl;
 trait HasType<T> {
     fn get_type(self) -> T;
 }
-#[abstract_impl(no_dummy)]
-impl<T> IntoField for Into<T> where Self: HasType<T> {
-    fn into(self) -> T {
-        self.get_type()
+trait FormatType<T> {
+    fn format_type(self) -> String;
+}
+#[abstract_impl]
+impl<T> FormatField for FormatType<T> where Self: HasType<T>, T: ToString {
+    fn format_type(self) -> String {
+        format!("{}", context.get_type().to_string())
+    }
+}
+struct Test(u8);
+impl HasType<u8> for Test {
+    fn get_type(self) -> u8 {
+        self.0
+    }
+}
+impl_FormatField!(Test);
+fn main() {}
+```
+### Impl-Generics
+```rust
+use abstract_impl::abstract_impl;
+trait HasType<T> {
+    fn get_type(self) -> T;
+}
+trait FormatType<T> {
+    fn format_type(self) -> String;
+}
+#[abstract_impl(no_macro)]
+impl FormatField<T> for FormatType<T> where Self: HasType<T>, T: ToString {
+    fn format_type(self) -> String {
+        format!("{}", context.get_type().to_string())
+    }
+}
+struct Test(u8);
+impl HasType<u8> for Test {
+    fn get_type(self) -> u8 {
+        self.0
+    }
+}
+impl FormatType<u8> for Test {
+    fn format_type(self) -> String {
+        FormatField::format_type::<Self, u8>(self)
     }
 }
 fn main() {}

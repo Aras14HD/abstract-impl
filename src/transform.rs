@@ -1,4 +1,5 @@
 use core::panic;
+use std::any::Any;
 
 use crate::{dummy::generate_dummy_impl, mac::generate_impl_macro};
 

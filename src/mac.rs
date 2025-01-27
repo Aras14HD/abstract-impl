@@ -17,17 +17,28 @@ pub fn generate_impl_macro(
     ty: &Ident,
     folder: &mut ChangeSelfToContext,
     trait_: Path,
+    generics: Generics,
+    ty_generics: Punctuated<GenericArgument, Comma>,
 ) -> Item {
+    if !ty_generics.is_empty() {
+        todo!("Macro support for Impl-Generics is planned");
+    }
     let items = imp
         .items
         .into_iter()
         .map(|item| match item {
-            ImplItem::Const(c) => generate_const(c, ty.clone()),
-            ImplItem::Fn(f) => generate_fn(f, ty.clone()),
-            ImplItem::Type(t) => generate_type(t, ty.clone(), folder),
+            ImplItem::Const(c) => {
+                generate_const(c, ty.clone(), generics.clone(), ty_generics.clone())
+            }
+            ImplItem::Fn(f) => generate_fn(f, ty.clone(), generics.clone(), ty_generics.clone()),
+            ImplItem::Type(t) => {
+                generate_type(t, ty.clone(), generics.clone(), ty_generics.clone(), folder)
+            }
             other => other,
         })
         .collect::<Box<_>>();
+    let gens = generics.params;
+    let where_clause = generics.where_clause;
     Item::Macro(ItemMacro {
         attrs: vec![Attribute {
             pound_token: Pound::default(),
@@ -42,7 +53,7 @@ pub fn generate_impl_macro(
             delimiter: syn::MacroDelimiter::Brace(Brace::default()),
             tokens: quote! {
                 ($t:ty) => {
-                    impl #trait_ for $t {
+                    impl<#gens> #trait_ for $t #where_clause {
                         #(#items)*
                     }
                 };
@@ -55,6 +66,8 @@ pub fn generate_impl_macro(
 fn generate_type(
     mut t: syn::ImplItemType,
     ty: Ident,
+    generics: Generics,
+    ty_generics: Punctuated<GenericArgument, Comma>,
     folder: &mut ChangeSelfToContext,
 ) -> ImplItem {
     t.ty = Type::Path(TypePath {
@@ -77,6 +90,8 @@ fn generate_type(
                                 .find(|i| i.0 == t.ident)
                                 .map(|i| i.1)
                                 .unwrap_or(false),
+                            generics,
+                            ty_generics,
                         );
                         if args.is_empty() {
                             PathArguments::None
@@ -98,7 +113,12 @@ fn generate_type(
     ImplItem::Type(t)
 }
 
-fn generate_fn(mut f: syn::ImplItemFn, ty: Ident) -> ImplItem {
+fn generate_fn(
+    mut f: syn::ImplItemFn,
+    ty: Ident,
+    generics: Generics,
+    ty_generics: Punctuated<GenericArgument, Comma>,
+) -> ImplItem {
     let args = f
         .sig
         .inputs
@@ -131,7 +151,12 @@ fn generate_fn(mut f: syn::ImplItemFn, ty: Ident) -> ImplItem {
                                 AngleBracketedGenericArguments {
                                     colon2_token: Some(PathSep::default()),
                                     lt_token: Lt::default(),
-                                    args: generic_to_arg(f.sig.generics.clone(), true),
+                                    args: generic_to_arg(
+                                        f.sig.generics.clone(),
+                                        true,
+                                        generics,
+                                        ty_generics,
+                                    ),
                                     gt_token: Gt::default(),
                                 },
                             ),
@@ -149,7 +174,12 @@ fn generate_fn(mut f: syn::ImplItemFn, ty: Ident) -> ImplItem {
     ImplItem::Fn(f)
 }
 
-fn generate_const(mut c: syn::ImplItemConst, ty: Ident) -> ImplItem {
+fn generate_const(
+    mut c: syn::ImplItemConst,
+    ty: Ident,
+    generics: Generics,
+    ty_generics: Punctuated<GenericArgument, Comma>,
+) -> ImplItem {
     c.ty = Type::Path(TypePath {
         qself: None,
         path: Path {
@@ -164,7 +194,7 @@ fn generate_const(mut c: syn::ImplItemConst, ty: Ident) -> ImplItem {
                     arguments: PathArguments::AngleBracketed(AngleBracketedGenericArguments {
                         colon2_token: None,
                         lt_token: Lt::default(),
-                        args: generic_to_arg(c.generics.clone(), true),
+                        args: generic_to_arg(c.generics.clone(), true, generics, ty_generics),
                         gt_token: Gt::default(),
                     }),
                 },
@@ -176,13 +206,31 @@ fn generate_const(mut c: syn::ImplItemConst, ty: Ident) -> ImplItem {
     ImplItem::Const(c)
 }
 
-fn generic_to_arg(generics: Generics, prepend_self: bool) -> Punctuated<GenericArgument, Comma> {
+fn generic_to_arg(
+    generics: Generics,
+    prepend_self: bool,
+    append_generics: Generics,
+    ty_generics: Punctuated<GenericArgument, Comma>,
+) -> Punctuated<GenericArgument, Comma> {
     prepend_self
         .then_some(GenericArgument::Type(Type::Path(TypePath {
             qself: None,
             path: Path::from(Ident::new("Self", Span::call_site())),
         })))
         .into_iter()
+        .chain(prepend_self.then_some(ty_generics).into_iter().flatten())
+        .chain(append_generics.params.into_iter().map(|param| match param {
+            GenericParam::Lifetime(l) => GenericArgument::Lifetime(l.lifetime),
+            GenericParam::Type(t) => GenericArgument::Type(Type::Path(TypePath {
+                qself: None,
+                path: Path::from(t.ident),
+            })),
+            GenericParam::Const(c) => GenericArgument::Const(Expr::Path(ExprPath {
+                attrs: vec![],
+                qself: None,
+                path: Path::from(c.ident),
+            })),
+        }))
         .chain(
             generics
                 .params
