@@ -10,10 +10,10 @@ use syn::{
     parse_quote,
     punctuated::Punctuated,
     spanned::Spanned,
-    token::{Brace, Bracket, Mod, Paren, Pound, Pub, Where},
-    AttrStyle, Attribute, GenericParam, Generics, Ident, ImplItem, ImplItemConst, ImplItemFn,
-    ImplItemType, Item, ItemConst, ItemFn, ItemImpl, ItemMod, ItemType, MetaList, Path, ReturnType,
-    Type, TypeParam, Visibility, WhereClause,
+    token::{Brace, Bracket, Colon, Comma, Const, Mod, Paren, Pound, Pub, Where},
+    AttrStyle, Attribute, GenericArgument, GenericParam, Generics, Ident, ImplItem, ImplItemConst,
+    ImplItemFn, ImplItemType, Item, ItemConst, ItemFn, ItemImpl, ItemMod, ItemType, MetaList, Path,
+    PathArguments, ReturnType, Type, TypeParam, Visibility, WhereClause,
 };
 
 pub fn transform(imp: ItemImpl, use_dummy: bool, use_macro: bool, legacy_order: bool) -> ItemMod {
@@ -41,12 +41,38 @@ pub fn transform(imp: ItemImpl, use_dummy: bool, use_macro: bool, legacy_order: 
         replaced: false,
     };
 
+    let trait_ = trait_.expect("Impl names are neccesary").1;
+    let Type::Path(syn::TypePath {
+        qself: None,
+        path: ty,
+    }) = *self_ty
+    else {
+        panic!("Type name has to be a Path")
+    };
+    #[cfg(feature = "impl_name_first")]
+    let (ty, trait_) = if !legacy_order {
+        (trait_, ty)
+    } else {
+        (ty, trait_)
+    };
+    assert!(ty.segments.len() == 1, "Impl names have to be Idents");
+    let ty_generics = match ty.segments[0].arguments.clone() {
+        PathArguments::None => Punctuated::new(),
+        PathArguments::AngleBracketed(args) => args.args.into(),
+        PathArguments::Parenthesized(_) => panic!("Impls are not functions"),
+    };
+    let ty = ty.segments[0].ident.clone();
+
     let mut processed: Vec<Item> = items
         .into_iter()
         .map(|item| match item {
-            ImplItem::Const(c) => process_const(c, generics.clone(), &mut folder),
-            ImplItem::Fn(f) => process_fn(f, generics.clone(), &mut folder),
-            ImplItem::Type(t) => process_type(t, generics.clone(), &mut folder),
+            ImplItem::Const(c) => {
+                process_const(c, generics.clone(), ty_generics.clone(), &mut folder)
+            }
+            ImplItem::Fn(f) => process_fn(f, generics.clone(), ty_generics.clone(), &mut folder),
+            ImplItem::Type(t) => {
+                process_type(t, generics.clone(), ty_generics.clone(), &mut folder)
+            }
             _ => panic!("abstract impl can only contain functions/methods and types!"),
         })
         .collect();
@@ -63,32 +89,26 @@ pub fn transform(imp: ItemImpl, use_dummy: bool, use_macro: bool, legacy_order: 
         }),
     });
 
-    let trait_ = trait_.expect("Impl names are neccesary").1;
-    let Type::Path(syn::TypePath {
-        qself: None,
-        path: ty,
-    }) = *self_ty
-    else {
-        panic!("Type name has to be a Path")
-    };
-    #[cfg(feature = "impl_name_first")]
-    let (ty, trait_) = if !legacy_order {
-        (trait_, ty)
-    } else {
-        (ty, trait_)
-    };
-    assert!(ty.segments.len() == 1, "Impl names have to be Idents");
-    let ty = ty.segments[0].ident.clone();
-
     // Dummy Impl (for errors)
     #[cfg(feature = "dummy")]
     if use_dummy {
         processed.push(parse_quote! {struct Dummy;});
-        processed.push(generate_dummy_impl(copy.clone(), trait_.clone()));
+        processed.push(generate_dummy_impl(
+            copy.clone(),
+            trait_.clone(),
+            ty_generics.clone(),
+        ));
     }
     #[cfg(feature = "macro")]
     if use_macro {
-        processed.push(generate_impl_macro(copy, &ty, &mut folder, trait_));
+        processed.push(generate_impl_macro(
+            copy,
+            &ty,
+            &mut folder,
+            trait_,
+            generics.clone(),
+            ty_generics.clone(),
+        ));
     }
 
     ItemMod {
@@ -105,6 +125,7 @@ pub fn transform(imp: ItemImpl, use_dummy: bool, use_macro: bool, legacy_order: 
 fn process_type(
     t: ImplItemType,
     append_generics: Generics,
+    ty_generics: Punctuated<GenericArgument, Comma>,
     folder: &mut ChangeSelfToContext,
 ) -> Item {
     let ImplItemType {
@@ -123,12 +144,7 @@ fn process_type(
     ty = folder.fold_type(ty);
 
     if folder.replaced {
-        generics.params.insert(
-            0,
-            syn::GenericParam::Type(TypeParam::from(Ident::new("Context", Span::mixed_site()))),
-        );
-
-        generics = process_generics(generics, append_generics, folder);
+        generics = process_generics(generics, true, append_generics, ty_generics, folder);
     } else {
         folder
             .local_idents
@@ -150,7 +166,12 @@ fn process_type(
     })
 }
 
-fn process_fn(f: ImplItemFn, generics: Generics, folder: &mut ChangeSelfToContext) -> Item {
+fn process_fn(
+    f: ImplItemFn,
+    generics: Generics,
+    ty_generics: Punctuated<GenericArgument, Comma>,
+    folder: &mut ChangeSelfToContext,
+) -> Item {
     let ImplItemFn {
         attrs,
         mut sig,
@@ -158,12 +179,7 @@ fn process_fn(f: ImplItemFn, generics: Generics, folder: &mut ChangeSelfToContex
         ..
     } = f;
 
-    sig.generics.params.insert(
-        0,
-        syn::GenericParam::Type(TypeParam::from(Ident::new("Context", Span::mixed_site()))),
-    );
-
-    sig.generics = process_generics(sig.generics, generics, folder);
+    sig.generics = process_generics(sig.generics, true, generics, ty_generics, folder);
     // change Self (to local or Context)
     sig.inputs = sig
         .inputs
@@ -191,6 +207,7 @@ fn process_fn(f: ImplItemFn, generics: Generics, folder: &mut ChangeSelfToContex
 fn process_const(
     c: ImplItemConst,
     append_generics: Generics,
+    ty_generics: Punctuated<GenericArgument, Comma>,
     folder: &mut ChangeSelfToContext,
 ) -> Item {
     let ImplItemConst {
@@ -206,7 +223,7 @@ fn process_const(
         ..
     } = c;
 
-    generics = process_generics(generics, append_generics, folder);
+    generics = process_generics(generics, false, append_generics, ty_generics, folder);
     // change Self (to local or Context)
     expr = folder.fold_expr(expr);
 
@@ -226,7 +243,9 @@ fn process_const(
 
 fn process_generics(
     mut generics: Generics,
+    insert_context: bool,
     append_generics: Generics,
+    ty_generics: Punctuated<GenericArgument, Comma>,
     folder: &mut ChangeSelfToContext,
 ) -> Generics {
     if let Some(where_clause) = append_generics.where_clause {
@@ -242,17 +261,37 @@ fn process_generics(
         });
     }
     // change Self (to local or Context)
-    generics.params = generics
-        .params
+    generics.params = insert_context
+        .then_some(syn::GenericParam::Type(TypeParam::from(Ident::new(
+            "Context",
+            Span::mixed_site(),
+        ))))
         .into_iter()
-        .map(|param| match param {
+        .chain(ty_generics.into_iter().map(|arg| match arg {
+            GenericArgument::Lifetime(l) => GenericParam::Lifetime(syn::LifetimeParam {
+                attrs: vec![],
+                lifetime: l,
+                colon_token: None,
+                bounds: Punctuated::new(),
+            }),
+            GenericArgument::Type(Type::Path(p)) => GenericParam::Type(syn::TypeParam {
+                attrs: vec![],
+                ident: p.path.segments[0].ident.clone(),
+                colon_token: None,
+                bounds: Punctuated::new(),
+                eq_token: None,
+                default: None,
+            }),
+            _ => panic!("Only Type and Lifetime generics are supported on Impl"),
+        }))
+        .chain(append_generics.params)
+        .chain(generics.params.into_iter().map(|param| match param {
             GenericParam::Type(mut t) => {
                 t.default = t.default.map(|d| folder.fold_type(d));
                 GenericParam::Type(t)
             }
             other => other,
-        })
-        .chain(append_generics.params)
+        }))
         .collect();
     generics.where_clause = generics.where_clause.map(|mut w| {
         w.predicates = w
