@@ -1,3 +1,5 @@
+use std::collections::{HashMap, HashSet};
+
 use proc_macro2::Span;
 use syn::{
     fold::Fold,
@@ -7,13 +9,16 @@ use syn::{
     PathArguments, PathSegment, Receiver, Type, TypePath, TypeReference,
 };
 
+#[derive(Debug, Clone)]
 pub struct ChangeSelfToContext {
-    pub local_idents: Box<[(Ident, bool)]>,
+    pub local_idents: HashMap<Ident, (bool, Vec<Ident>)>,
     pub replaced: bool,
+    pub found_idents: HashSet<Ident>,
 }
 
 impl Fold for ChangeSelfToContext {
     fn fold_ident(&mut self, i: proc_macro2::Ident) -> proc_macro2::Ident {
+        self.found_idents.insert(i.clone());
         match i.to_string().as_str() {
             "Self" => {
                 self.replaced = true;
@@ -34,14 +39,15 @@ impl Fold for ChangeSelfToContext {
         {
             self.replaced = true;
             if let Some(seg) = i.segments.get(1) {
-                if let Some((_, has_generics)) = self.local_idents.iter().find(|e| e.0 == seg.ident)
-                {
+                if let Some((has_context, other_generics)) = self.local_idents.get(&seg.ident) {
                     let span = seg.ident.span();
                     i.segments = i.segments.into_iter().skip(1).collect();
-                    if *has_generics {
-                        i.segments[0].arguments =
-                            prepend_context_generic(i.segments[0].arguments.clone(), span);
-                    }
+                    i.segments[0].arguments = prepend_generics(
+                        i.segments[0].arguments.clone(),
+                        *has_context,
+                        other_generics,
+                        span,
+                    );
                 }
             }
         }
@@ -68,43 +74,64 @@ impl Fold for ChangeSelfToContext {
         }
     }
 }
-fn prepend_context_generic(arguments: PathArguments, span: Span) -> PathArguments {
+pub fn prepend_generics(
+    arguments: PathArguments,
+    has_context: bool,
+    other_generics: &Vec<Ident>,
+    span: Span,
+) -> PathArguments {
     match arguments {
         PathArguments::AngleBracketed(mut args) => {
-            args.args = [GenericArgument::Type(Type::Path(TypePath {
-                qself: None,
-                path: Path {
-                    leading_colon: None,
-                    segments: [PathSegment {
-                        ident: Ident::new("Context", span),
-                        arguments: PathArguments::None,
-                    }]
-                    .into_iter()
-                    .collect(),
-                },
-            }))]
-            .into_iter()
-            .chain(args.args)
-            .collect();
+            args.args = has_context
+                .then_some([GenericArgument::Type(Type::Path(TypePath {
+                    qself: None,
+                    path: Path {
+                        leading_colon: None,
+                        segments: [PathSegment {
+                            ident: Ident::new("Context", span),
+                            arguments: PathArguments::None,
+                        }]
+                        .into_iter()
+                        .collect(),
+                    },
+                }))])
+                .into_iter()
+                .flatten()
+                .chain(other_generics.into_iter().map(|gen| {
+                    GenericArgument::Type(Type::Path(TypePath {
+                        qself: None,
+                        path: Path::from(gen.clone()),
+                    }))
+                }))
+                .chain(args.args)
+                .collect();
             PathArguments::AngleBracketed(args)
         }
         _ => PathArguments::AngleBracketed(AngleBracketedGenericArguments {
             colon2_token: Some(PathSep::default()),
             lt_token: Lt::default(),
-            args: [GenericArgument::Type(Type::Path(TypePath {
-                qself: None,
-                path: Path {
-                    leading_colon: None,
-                    segments: [PathSegment {
-                        ident: Ident::new("Context", span),
-                        arguments: PathArguments::None,
-                    }]
-                    .into_iter()
-                    .collect(),
-                },
-            }))]
-            .into_iter()
-            .collect(),
+            args: has_context
+                .then_some([GenericArgument::Type(Type::Path(TypePath {
+                    qself: None,
+                    path: Path {
+                        leading_colon: None,
+                        segments: [PathSegment {
+                            ident: Ident::new("Context", span),
+                            arguments: PathArguments::None,
+                        }]
+                        .into_iter()
+                        .collect(),
+                    },
+                }))])
+                .into_iter()
+                .flatten()
+                .chain(other_generics.into_iter().map(|gen| {
+                    GenericArgument::Type(Type::Path(TypePath {
+                        qself: None,
+                        path: Path::from(gen.clone()),
+                    }))
+                }))
+                .collect(),
             gt_token: Gt::default(),
         }),
     }

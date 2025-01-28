@@ -262,10 +262,11 @@ associated types, that do not depend on Self (would get a type error otherwise),
 - [ ] const item in impl (currently has no generics)
 - [x] generics for trait and impl
 - [ ] self in macros (expand inner first)
-- [ ] improved generic eliding for associated types (also check if generics were used)
+- [x] improved generic eliding for associated types (also check if generics were used)
 ## Changelog
  - 0.1.0 Working version with basic documentation
  - 0.2.0 Reverse trait and name position (now impl Impl for Trait) and extended documentation
  - 0.2.1 Explanation on how it works, better errors and generics
+ - 0.2.2 Better generic eliding (UseType pattern now kinda works)
 ## License
 This code is MIT licensed.

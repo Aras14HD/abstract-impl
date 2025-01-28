@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use crate::{dummy::generate_dummy_impl, mac::generate_impl_macro};
 
 use super::change_self::ChangeSelfToContext;
@@ -33,15 +35,16 @@ pub fn transform(
     let local_idents = items
         .iter()
         .filter_map(|e| match e {
-            ImplItem::Type(ty) => Some((ty.ident.clone(), true)),
-            ImplItem::Const(c) => Some((c.ident.clone(), true)),
-            ImplItem::Fn(f) => Some((f.sig.ident.clone(), true)),
+            ImplItem::Type(ty) => Some((ty.ident.clone(), (true, vec![]))),
+            ImplItem::Const(c) => Some((c.ident.clone(), (true, vec![]))),
+            ImplItem::Fn(f) => Some((f.sig.ident.clone(), (true, vec![]))),
             _ => None,
         })
-        .collect::<Box<_>>();
+        .collect();
     let mut folder = ChangeSelfToContext {
         local_idents,
         replaced: false,
+        found_idents: std::collections::HashSet::new(),
     };
 
     let trait_ = trait_
@@ -165,17 +168,38 @@ fn process_type(
 
     // change Self (to local or Context)
     folder.replaced = false;
+    folder.found_idents = HashSet::new();
     ty = folder.fold_type(ty);
+    generics = folder.fold_generics(generics);
 
-    if folder.replaced {
-        generics = process_generics(generics, true, append_generics, ty_generics, folder)?;
-    } else {
-        folder
+    generics = process_generics(
+        generics,
+        false,
+        append_generics.clone(),
+        ty_generics.clone(),
+        folder,
+    )?;
+    if !folder.replaced {
+        *folder
             .local_idents
-            .iter_mut()
-            .find(|e| e.0 == ident)
-            .expect("Not in local_idents! Should be impossible.")
-            .1 = false;
+            .get_mut(&ident)
+            .expect("Not in local_idents! Should be impossible.") = (
+            false,
+            folder
+                .found_idents
+                .iter()
+                .cloned()
+                .filter(|id| {
+                    append_generics.params.iter().any(|par| match par {
+                        GenericParam::Type(TypeParam { ident, .. }) => ident == id,
+                        _ => false,
+                    }) || ty_generics.iter().any(|arg| match arg {
+                        GenericArgument::Type(Type::Path(p)) => &p.path.segments[0].ident == id,
+                        _ => false,
+                    })
+                })
+                .collect(),
+        );
     }
 
     Ok(Item::Type(ItemType {
@@ -247,7 +271,7 @@ fn process_const(
         ..
     } = c;
 
-    generics = process_generics(generics, false, append_generics, ty_generics, folder)?;
+    generics = process_generics(generics, true, append_generics, ty_generics, folder)?;
     // change Self (to local or Context)
     expr = folder.fold_expr(expr);
 
@@ -267,12 +291,31 @@ fn process_const(
 
 fn process_generics(
     mut generics: Generics,
-    insert_context: bool,
+    insert_all: bool,
     append_generics: Generics,
     ty_generics: Punctuated<GenericArgument, Comma>,
     folder: &mut ChangeSelfToContext,
 ) -> syn::Result<Generics> {
-    if let Some(where_clause) = append_generics.where_clause {
+    if let Some(mut where_clause) = append_generics.where_clause {
+        if !insert_all {
+            where_clause.predicates = where_clause
+                .predicates
+                .into_iter()
+                .filter(|x| match x {
+                    syn::WherePredicate::Type(syn::PredicateType {
+                        bounded_ty: Type::Path(p),
+                        ..
+                    }) => {
+                        p.path.segments[0].ident.to_string() != "Self"
+                            && p.qself.as_ref().map_or(true, |x| match &*x.ty {
+                                Type::Path(p) => p.path.segments[0].ident.to_string() != "Self",
+                                _ => true,
+                            })
+                    }
+                    _ => true,
+                })
+                .collect();
+        }
         generics.where_clause = Some(WhereClause {
             where_token: Where::default(),
             predicates: generics
@@ -285,42 +328,55 @@ fn process_generics(
         });
     }
     // change Self (to local or Context)
-    generics.params = insert_context
-        .then_some(syn::GenericParam::Type(TypeParam::from(Ident::new(
-            "Context",
-            Span::mixed_site(),
-        ))))
-        .into_iter()
-        .map(Ok)
-        .chain(ty_generics.into_iter().map(|arg| match arg {
-            GenericArgument::Lifetime(l) => Ok(GenericParam::Lifetime(syn::LifetimeParam {
-                attrs: vec![],
-                lifetime: l,
-                colon_token: None,
-                bounds: Punctuated::new(),
-            })),
-            GenericArgument::Type(Type::Path(p)) => Ok(GenericParam::Type(syn::TypeParam {
-                attrs: vec![],
-                ident: p.path.segments[0].ident.clone(),
-                colon_token: None,
-                bounds: Punctuated::new(),
-                eq_token: None,
-                default: None,
-            })),
-            o => Err(Error::new(
-                o.span(),
-                "Only Type and Lifetime generics are supported on Impl",
-            )),
-        }))
-        .chain(append_generics.params.into_iter().map(Ok))
-        .chain(generics.params.into_iter().map(|param| match param {
-            GenericParam::Type(mut t) => {
-                t.default = t.default.map(|d| folder.fold_type(d));
-                Ok(GenericParam::Type(t))
-            }
-            other => Ok(other),
-        }))
-        .collect::<syn::Result<_>>()?;
+    generics.params = (insert_all
+        || folder
+            .found_idents
+            .contains(&Ident::new("Self", Span::mixed_site())))
+    .then_some(syn::GenericParam::Type(TypeParam::from(Ident::new(
+        "Context",
+        Span::mixed_site(),
+    ))))
+    .into_iter()
+    .map(Ok)
+    .chain(
+        ty_generics
+            .into_iter()
+            .map(|arg| match arg {
+                GenericArgument::Lifetime(l) => Ok(GenericParam::Lifetime(syn::LifetimeParam {
+                    attrs: vec![],
+                    lifetime: l,
+                    colon_token: None,
+                    bounds: Punctuated::new(),
+                })),
+                GenericArgument::Type(Type::Path(p)) => Ok(GenericParam::Type(syn::TypeParam {
+                    attrs: vec![],
+                    ident: p.path.segments[0].ident.clone(),
+                    colon_token: None,
+                    bounds: Punctuated::new(),
+                    eq_token: None,
+                    default: None,
+                })),
+                o => Err(Error::new(
+                    o.span(),
+                    "Only Type and Lifetime generics are supported on Impl",
+                )),
+            })
+            .filter(|param| match param {
+                Ok(GenericParam::Type(TypeParam { ident, .. })) => {
+                    folder.found_idents.contains(ident) || insert_all
+                }
+                _ => true,
+            }),
+    )
+    .chain(append_generics.params.into_iter().map(Ok))
+    .chain(generics.params.into_iter().map(|param| match param {
+        GenericParam::Type(mut t) => {
+            t.default = t.default.map(|d| folder.clone().fold_type(d));
+            Ok(GenericParam::Type(t))
+        }
+        other => Ok(other),
+    }))
+    .collect::<syn::Result<_>>()?;
     generics.where_clause = generics.where_clause.map(|mut w| {
         w.predicates = w
             .predicates

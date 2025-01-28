@@ -1,3 +1,4 @@
+use core::panic;
 use std::collections::HashMap;
 
 use proc_macro2::Span;
@@ -10,7 +11,8 @@ use syn::{
     AngleBracketedGenericArguments, AttrStyle, Attribute, Block, Expr, ExprConst, ExprPath,
     FieldPat, FnArg, GenericArgument, GenericParam, Generics, Ident, ImplItem, Item, ItemImpl,
     ItemMacro, Pat, PatIdent, PatOr, PatParen, PatReference, PatSlice, PatStruct, PatTuple,
-    PatTupleStruct, PatType, Path, PathArguments, PathSegment, Receiver, Stmt, Type, TypePath,
+    PatTupleStruct, PatType, Path, PathArguments, PathSegment, Receiver, Stmt, Type, TypeParam,
+    TypePath,
 };
 
 use crate::change_self::ChangeSelfToContext;
@@ -120,7 +122,7 @@ pub fn generate_impl_macro(
             } else {
                 quote! {
                     (<#(#external_types),*> $ty:ty) => {
-                        #(type #new_ty_generics = #external_types_use;)*
+                        #(#[allow(non_camel_case_types)]type #new_ty_generics = #external_types_use;)*
                         impl<#gens> #trait_ for $ty #where_clause {
                             #(#items)*
                         }
@@ -135,8 +137,8 @@ pub fn generate_impl_macro(
 fn generate_type(
     mut t: syn::ImplItemType,
     ty: Ident,
-    generics: Generics,
-    ty_generics: Box<[GenericArgument]>,
+    mut generics: Generics,
+    mut ty_generics: Box<[GenericArgument]>,
     folder: &mut ChangeSelfToContext,
 ) -> ImplItem {
     t.ty = Type::Path(TypePath {
@@ -145,23 +147,39 @@ fn generate_type(
             leading_colon: None,
             segments: [
                 PathSegment {
-                    ident: ty,
+                    ident: ty.clone(),
                     arguments: PathArguments::None,
                 },
                 PathSegment {
                     ident: t.ident.clone(),
                     arguments: {
-                        let args = generic_to_arg(
-                            t.generics.clone(),
-                            folder
-                                .local_idents
-                                .iter()
-                                .find(|i| i.0 == t.ident)
-                                .map(|i| i.1)
-                                .unwrap_or(false),
-                            generics,
-                            ty_generics,
-                        );
+                        let (has_context, retained_generics) =
+                            folder.local_idents.get(&t.ident).unwrap();
+                        generics.params = generics
+                            .params
+                            .into_iter()
+                            .filter(|gen| match gen {
+                                GenericParam::Type(TypeParam { ident, .. }) => {
+                                    retained_generics.contains(ident)
+                                }
+                                _ => true,
+                            })
+                            .collect();
+                        ty_generics = ty_generics
+                            .into_vec()
+                            .into_iter()
+                            .filter(|gen| match gen {
+                                GenericArgument::Type(Type::Path(p)) => {
+                                    retained_generics.iter().any(|id| {
+                                        p.path.segments[0].ident.to_string()
+                                            == format!("_impl_{ty}_{}", id)
+                                    })
+                                }
+                                _ => true,
+                            })
+                            .collect();
+                        let args =
+                            generic_to_arg(t.generics.clone(), *has_context, generics, ty_generics);
                         if args.is_empty() {
                             PathArguments::None
                         } else {
@@ -287,7 +305,7 @@ fn generic_to_arg(
             path: Path::from(Ident::new("Self", Span::call_site())),
         })))
         .into_iter()
-        .chain(prepend_self.then_some(ty_generics).into_iter().flatten())
+        .chain(ty_generics)
         .chain(append_generics.params.into_iter().map(|param| match param {
             GenericParam::Lifetime(l) => GenericArgument::Lifetime(l.lifetime),
             GenericParam::Type(t) => GenericArgument::Type(Type::Path(TypePath {

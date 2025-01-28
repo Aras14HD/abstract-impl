@@ -58,3 +58,19 @@ pub fn abstract_impl(
     };
     res.to_token_stream().into()
 }
+
+// DOCTESTS(hidden):
+/// ```rust
+/// use abstract_impl::abstract_impl;
+/// trait TimeType {
+///   type Time;
+/// }
+/// #[abstract_impl(no_dummy)]
+/// impl TimeUsingType<T> for TimeType {
+///   type Time = T;
+/// }
+/// impl_TimeUsingType!(<usize> ());
+/// fn main() {}
+/// ```
+#[allow(dead_code)]
+struct Tests;
