@@ -137,9 +137,13 @@ impl HasType<u8> for Test {
     }
 }
 impl_FormatField!(Test);
-fn main() {}
+fn main() {
+    let t = Test(5);
+    assert_eq!("5", t.format_type());
+}
 ```
 ### Impl-Generics
+Or you can make the impl (macro) take generic parameters.
 ```rust
 use abstract_impl::abstract_impl;
 trait HasType<T> {
@@ -161,8 +165,12 @@ impl HasType<u8> for Test {
     }
 }
 impl_FormatField!(<u8> Test);
-fn main() {}
+fn main() {
+    let t = Test(5);
+    assert_eq!("5", t.format_type());
+}
 ```
+This has the benefit, that it will error at the impl macro if the trait bounds aren't satisfied, not at the method invocation.
 ### No Macro
 Sometimes the impl_Impl macros might not be desired.
 In that case it may be disabled with the `no_macro` option.

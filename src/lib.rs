@@ -47,11 +47,14 @@ pub fn abstract_impl(
 ) -> proc_macro::TokenStream {
     let parsed = parse_macro_input!(item as ItemImpl);
     let IdentList(attrs) = parse_macro_input!(_attr);
-    let res = transform::transform(
+    let res = match transform::transform(
         parsed,
         attrs.iter().all(|attr| attr.to_string() != "no_dummy"),
         attrs.iter().all(|attr| attr.to_string() != "no_macro"),
         attrs.iter().any(|attr| attr.to_string() == "legacy_order"),
-    );
+    ) {
+        Ok(res) => res,
+        Err(e) => return e.into_compile_error().into(),
+    };
     res.to_token_stream().into()
 }
