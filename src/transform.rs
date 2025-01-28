@@ -60,7 +60,6 @@ pub fn transform(
             "Impl/Trait name has to be a Path",
         ))?
     };
-    #[cfg(feature = "impl_name_first")]
     let (ty, trait_) = if !legacy_order {
         (trait_, ty)
     } else {

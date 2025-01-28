@@ -7,7 +7,7 @@ readme = "README.md"
 keywords = ["abstract", "generic", "implementation", "traits", "macro"]
 categories = ["development-tools", "rust-patterns"]
 license = "MIT"
-version = "0.2.1"
+version = "0.2.2"
 edition = "2021"
 
 [dependencies]
@@ -19,8 +19,7 @@ syn = { version = "2.0.96", features = ["full", "fold"] }
 proc-macro = true
 
 [features]
-default = ["dummy", "macro", "impl_name_first"]
+default = ["dummy", "macro"]
 dummy = []
 macro = []
-impl_name_first = []
 
