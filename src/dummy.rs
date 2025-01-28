@@ -1,4 +1,5 @@
 use proc_macro2::Span;
+use quote::quote;
 use syn::{
     parse_quote,
     punctuated::Punctuated,
@@ -72,5 +73,15 @@ pub fn generate_dummy_impl(
         })
         .chain(imp.generics.params.into_iter().map(Ok))
         .collect::<syn::Result<_>>()?;
+    imp.attrs.push(syn::Attribute {
+        pound_token: syn::token::Pound::default(),
+        style: syn::AttrStyle::Outer,
+        bracket_token: syn::token::Bracket::default(),
+        meta: syn::Meta::List(syn::MetaList {
+            path: Path::from(Ident::new("allow", Span::mixed_site())),
+            delimiter: syn::MacroDelimiter::Paren(syn::token::Paren::default()),
+            tokens: quote! {unused_variables},
+        }),
+    });
     Ok(Item::Impl(imp))
 }
