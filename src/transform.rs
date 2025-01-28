@@ -71,7 +71,7 @@ pub fn transform(
         .ok_or(Error::new(ty.span(), "Impl names have to be Idents"))?;
     let ty_generics = match ty.segments[0].arguments.clone() {
         PathArguments::None => Punctuated::new(),
-        PathArguments::AngleBracketed(args) => args.args.into(),
+        PathArguments::AngleBracketed(args) => args.args,
         PathArguments::Parenthesized(p) => Err(Error::new(p.span(), "Impls are not functions"))?,
     };
     let ty = ty.segments[0].ident.clone();
@@ -188,16 +188,16 @@ fn process_type(
             folder
                 .found_idents
                 .iter()
-                .cloned()
                 .filter(|id| {
                     append_generics.params.iter().any(|par| match par {
-                        GenericParam::Type(TypeParam { ident, .. }) => ident == id,
+                        GenericParam::Type(TypeParam { ident, .. }) => ident == *id,
                         _ => false,
                     }) || ty_generics.iter().any(|arg| match arg {
-                        GenericArgument::Type(Type::Path(p)) => &p.path.segments[0].ident == id,
+                        GenericArgument::Type(Type::Path(p)) => &p.path.segments[0].ident == *id,
                         _ => false,
                     })
                 })
+                .cloned()
                 .collect(),
         );
     }
@@ -306,9 +306,9 @@ fn process_generics(
                         bounded_ty: Type::Path(p),
                         ..
                     }) => {
-                        p.path.segments[0].ident.to_string() != "Self"
+                        p.path.segments[0].ident != "Self"
                             && p.qself.as_ref().map_or(true, |x| match &*x.ty {
-                                Type::Path(p) => p.path.segments[0].ident.to_string() != "Self",
+                                Type::Path(p) => p.path.segments[0].ident != "Self",
                                 _ => true,
                             })
                     }
@@ -321,9 +321,9 @@ fn process_generics(
             predicates: generics
                 .where_clause
                 .map(|w| w.predicates)
-                .unwrap_or(Punctuated::new())
+                .unwrap_or_default()
                 .into_iter()
-                .chain(where_clause.predicates.into_iter())
+                .chain(where_clause.predicates)
                 .collect(),
         });
     }

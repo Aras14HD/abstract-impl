@@ -1,4 +1,3 @@
-use core::panic;
 use std::collections::HashMap;
 
 use proc_macro2::Span;
@@ -171,8 +170,7 @@ fn generate_type(
                             .filter(|gen| match gen {
                                 GenericArgument::Type(Type::Path(p)) => {
                                     retained_generics.iter().any(|id| {
-                                        p.path.segments[0].ident.to_string()
-                                            == format!("_impl_{ty}_{}", id)
+                                        p.path.segments[0].ident == format!("_impl_{ty}_{}", id)
                                     })
                                 }
                                 _ => true,
@@ -365,18 +363,14 @@ fn pat_to_expr(pat: Pat) -> Vec<Expr> {
         Pat::Range(r) => vec![Expr::Range(r)],
         Pat::Reference(PatReference { pat, .. }) => pat_to_expr(*pat),
         Pat::Rest(_) => vec![],
-        Pat::Slice(PatSlice { elems, .. }) => {
-            elems.into_iter().flat_map(|pat| pat_to_expr(pat)).collect()
-        }
+        Pat::Slice(PatSlice { elems, .. }) => elems.into_iter().flat_map(pat_to_expr).collect(),
         Pat::Struct(PatStruct { fields, .. }) => fields
             .into_iter()
             .flat_map(|FieldPat { pat, .. }| pat_to_expr(*pat))
             .collect(),
-        Pat::Tuple(PatTuple { elems, .. }) => {
-            elems.into_iter().flat_map(|pat| pat_to_expr(pat)).collect()
-        }
+        Pat::Tuple(PatTuple { elems, .. }) => elems.into_iter().flat_map(pat_to_expr).collect(),
         Pat::TupleStruct(PatTupleStruct { elems, .. }) => {
-            elems.into_iter().flat_map(|pat| pat_to_expr(pat)).collect()
+            elems.into_iter().flat_map(pat_to_expr).collect()
         }
         Pat::Type(PatType { pat, .. }) => pat_to_expr(*pat),
         Pat::Verbatim(v) => vec![Expr::Verbatim(v)],

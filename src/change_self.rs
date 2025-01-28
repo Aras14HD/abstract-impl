@@ -34,7 +34,7 @@ impl Fold for ChangeSelfToContext {
     fn fold_path(&mut self, mut i: syn::Path) -> syn::Path {
         if i.segments
             .first()
-            .map(|seg| seg.ident.to_string() == "Self")
+            .map(|seg| seg.ident == "Self")
             .unwrap_or(false)
         {
             self.replaced = true;
@@ -77,7 +77,7 @@ impl Fold for ChangeSelfToContext {
 pub fn prepend_generics(
     arguments: PathArguments,
     has_context: bool,
-    other_generics: &Vec<Ident>,
+    other_generics: &[Ident],
     span: Span,
 ) -> PathArguments {
     match arguments {
@@ -97,7 +97,7 @@ pub fn prepend_generics(
                 }))])
                 .into_iter()
                 .flatten()
-                .chain(other_generics.into_iter().map(|gen| {
+                .chain(other_generics.iter().map(|gen| {
                     GenericArgument::Type(Type::Path(TypePath {
                         qself: None,
                         path: Path::from(gen.clone()),
@@ -125,7 +125,7 @@ pub fn prepend_generics(
                 }))])
                 .into_iter()
                 .flatten()
-                .chain(other_generics.into_iter().map(|gen| {
+                .chain(other_generics.iter().map(|gen| {
                     GenericArgument::Type(Type::Path(TypePath {
                         qself: None,
                         path: Path::from(gen.clone()),

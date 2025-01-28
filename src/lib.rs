@@ -1,3 +1,4 @@
+#![allow(clippy::needless_doctest_main)]
 #![doc = include_str!("../README.md")]
 use quote::ToTokens;
 use syn::punctuated::Punctuated;
@@ -49,9 +50,9 @@ pub fn abstract_impl(
     let IdentList(attrs) = parse_macro_input!(_attr);
     let res = match transform::transform(
         parsed,
-        attrs.iter().all(|attr| attr.to_string() != "no_dummy"),
-        attrs.iter().all(|attr| attr.to_string() != "no_macro"),
-        attrs.iter().any(|attr| attr.to_string() == "legacy_order"),
+        attrs.iter().all(|attr| *attr != "no_dummy"),
+        attrs.iter().all(|attr| *attr != "no_macro"),
+        attrs.iter().any(|attr| *attr == "legacy_order"),
     ) {
         Ok(res) => res,
         Err(e) => return e.into_compile_error().into(),
