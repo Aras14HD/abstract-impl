@@ -223,14 +223,49 @@ impl ToString for DebugToString where Self: std::fmt::Debug {
 }
 ```
 ## How it is made
-(WIP)
+After first trying to implement this functionality closer to CGP with an inherent impl block (on a type),
+I switched to using modules, since inherent types are still **very** unstable (experimental).
+
+The current implementation simply copies all trait (where clause) bounds to the trait items,
+prepends a Context generic type (and all generics) and replaces Self/self with Context/context where it can.
+
+The beginning example turns into:
+```rust
+mod DebugToString {
+    // the actual impl (with context instead of self and prepended Context generic and where bounds)
+    fn to_string<Context>(context: &Context) -> String where Context: std::fmt::Debug {
+        format!("{context:?}")
+    }
+    // dummy impl to make shure all items are implemented
+    struct Dummy;
+    impl ToString for Dummy {
+        fn to_string(&self) -> String {
+            unimplemented!()
+        }
+    }
+    // impl macro to give types a simple way of using it
+    macro_rules! impl_DebugToString {
+        ($t:ty) => {
+            impl ToString for $t {
+                fn to_string(&self) -> String {
+                    DebugToString::to_string::<Self>(self)
+                }
+            }
+        }
+    }
+}
+```
+There are some more edge cases this handles, like referencing associated types declared in the same trait,
+associated types, that do not depend on Self (would get a type error otherwise), etc.
 
 ## Future Plans
 - [ ] const item in impl (currently has no generics)
-- [ ] generics for trait and impl
+- [x] generics for trait and impl
 - [ ] self in macros (expand inner first)
+- [ ] improved generic eliding for associated types (also check if generics were used)
 ## Changelog
  - 0.1.0 Working version with basic documentation
  - 0.2.0 Reverse trait and name position (now impl Impl for Trait) and extended documentation
+ - 0.2.1 Explanation on how it works, better errors and generics
 ## License
 This code is MIT licensed.
