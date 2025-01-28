@@ -263,6 +263,7 @@ associated types, that do not depend on Self (would get a type error otherwise),
 - [x] generics for trait and impl
 - [ ] self in macros (expand inner first)
 - [x] improved generic eliding for associated types (also check if generics were used)
+- [ ] helper macros (like derive(UseType) and similar)
 ## Changelog
  - 0.1.0 Working version with basic documentation
  - 0.2.0 Reverse trait and name position (now impl Impl for Trait) and extended documentation
