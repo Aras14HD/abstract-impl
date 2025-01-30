@@ -5,7 +5,7 @@ use core::panic;
 use quote::{quote, ToTokens};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
-use syn::{parse_macro_input, ExprRepeat, ItemImpl, ItemTrait, Path, TraitItemType};
+use syn::{parse_macro_input, ItemImpl, ItemTrait, Path};
 use syn::{token, Ident};
 mod change_self;
 mod dummy;
@@ -222,7 +222,7 @@ pub fn use_field(
     let items = trait_.items.clone().into_iter().map(|item| match item {
         TraitItem::Fn(syn::TraitItemFn { attrs, sig, .. }) => {
             let (ref_, mut_) = match sig.inputs.first() {
-                Some(syn::FnArg::Receiver(r)) => (r.reference.clone(), r.mutability.clone()),
+                Some(syn::FnArg::Receiver(r)) => (r.reference.clone(), r.mutability),
                 _ => panic!("All functions must take self"),
             };
             ImplItem::Fn(syn::ImplItemFn {
