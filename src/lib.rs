@@ -258,6 +258,115 @@ pub fn use_field(
     }
     .into()
 }
+
+#[allow(dead_code)]
+struct ImplWithFieldInput {
+    lt_token: syn::token::Lt,
+    type_: syn::Type,
+    gt_token: syn::token::Gt,
+    self_: syn::Type,
+    brace_token: syn::token::Brace,
+    expr: syn::Expr,
+}
+impl syn::parse::Parse for ImplWithFieldInput {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let content;
+        Ok(Self {
+            lt_token: input.parse()?,
+            type_: input.parse()?,
+            gt_token: input.parse()?,
+            self_: input.parse()?,
+            brace_token: syn::braced!(content in input),
+            expr: content.parse()?,
+        })
+    }
+}
+
+/// Implement AsRef using a field
+/// ```rust
+/// # use abstract_impl::*;
+/// struct Test {
+///   field: String,
+/// };
+/// impl_as_ref_with_field!(<String> Test {field});
+/// ```
+#[proc_macro]
+pub fn impl_as_ref_with_field(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ImplWithFieldInput {
+        type_, self_, expr, ..
+    } = parse_macro_input!(item as ImplWithFieldInput);
+    quote! {
+        impl AsRef<#type_> for #self_ {
+            fn as_ref(&self) -> &#type_ {
+                &self.#expr
+            }
+        }
+    }
+    .into()
+}
+/// Implement AsMut using a field
+/// ```rust
+/// # use abstract_impl::*;
+/// struct Test {
+///   field: String,
+/// };
+/// impl_as_mut_with_field!(<String> Test {field});
+/// ```
+#[proc_macro]
+pub fn impl_as_mut_with_field(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ImplWithFieldInput {
+        type_, self_, expr, ..
+    } = parse_macro_input!(item as ImplWithFieldInput);
+    quote! {
+        impl AsMut<#type_> for #self_ {
+            fn as_mut(&mut self) -> &mut #type_ {
+                &mut self.#expr
+            }
+        }
+    }
+    .into()
+}
+/// Implement Into using a field
+/// ```rust
+/// # use abstract_impl::*;
+/// struct Test {
+///   field: String,
+/// };
+/// impl_into_with_field!(<String> Test {field});
+/// ```
+#[proc_macro]
+pub fn impl_into_with_field(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ImplWithFieldInput {
+        type_, self_, expr, ..
+    } = parse_macro_input!(item as ImplWithFieldInput);
+    quote! {
+        impl Into<#type_> for #self_ {
+            fn into(self) -> #type_ {
+                self.#expr
+            }
+        }
+    }
+    .into()
+}
+/// Implement Into, AsRef and AsMut using a field
+/// ```rust
+/// # use abstract_impl::*;
+/// struct Test {
+///   field: String,
+/// };
+/// impl_conversion_with_field!(<String> Test {field});
+/// ```
+#[proc_macro]
+pub fn impl_conversion_with_field(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let item: proc_macro2::TokenStream = item.into();
+    quote! {
+        ::abstract_impl::impl_into_with_field!(#item);
+        ::abstract_impl::impl_as_ref_with_field!(#item);
+        ::abstract_impl::impl_as_mut_with_field!(#item);
+    }
+    .into()
+}
+
 // DOCTESTS(hidden):
 /// ```rust
 /// use abstract_impl::abstract_impl;
