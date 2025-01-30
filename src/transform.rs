@@ -169,6 +169,7 @@ fn process_type(
     folder.replaced = false;
     folder.found_idents = HashSet::new();
     ty = folder.fold_type(ty);
+    generics.where_clause = None;
     generics = folder.fold_generics(generics);
 
     generics = process_generics(
@@ -178,28 +179,27 @@ fn process_type(
         ty_generics.clone(),
         folder,
     )?;
-    if !folder.replaced {
-        *folder
-            .local_idents
-            .get_mut(&ident)
-            .expect("Not in local_idents! Should be impossible.") = (
-            false,
-            folder
-                .found_idents
-                .iter()
-                .filter(|id| {
-                    append_generics.params.iter().any(|par| match par {
-                        GenericParam::Type(TypeParam { ident, .. }) => ident == *id,
-                        _ => false,
-                    }) || ty_generics.iter().any(|arg| match arg {
-                        GenericArgument::Type(Type::Path(p)) => &p.path.segments[0].ident == *id,
-                        _ => false,
-                    })
+    generics.where_clause = None;
+    *folder
+        .local_idents
+        .get_mut(&ident)
+        .expect("Not in local_idents! Should be impossible.") = (
+        folder.replaced,
+        folder
+            .found_idents
+            .iter()
+            .filter(|id| {
+                append_generics.params.iter().any(|par| match par {
+                    GenericParam::Type(TypeParam { ident, .. }) => ident == *id,
+                    _ => false,
+                }) || ty_generics.iter().any(|arg| match arg {
+                    GenericArgument::Type(Type::Path(p)) => &p.path.segments[0].ident == *id,
+                    _ => false,
                 })
-                .cloned()
-                .collect(),
-        );
-    }
+            })
+            .cloned()
+            .collect(),
+    );
 
     Ok(Item::Type(ItemType {
         attrs,
@@ -293,7 +293,7 @@ fn process_generics(
     insert_all: bool,
     append_generics: Generics,
     ty_generics: Punctuated<GenericArgument, Comma>,
-    folder: &mut ChangeSelfToContext,
+    folder: &ChangeSelfToContext,
 ) -> syn::Result<Generics> {
     if let Some(mut where_clause) = append_generics.where_clause {
         if !insert_all {
@@ -305,9 +305,11 @@ fn process_generics(
                         bounded_ty: Type::Path(p),
                         ..
                     }) => {
-                        p.path.segments[0].ident != "Self"
+                        folder.found_idents.contains(&p.path.segments[0].ident)
                             && p.qself.as_ref().map_or(true, |x| match &*x.ty {
-                                Type::Path(p) => p.path.segments[0].ident != "Self",
+                                Type::Path(p) => {
+                                    folder.found_idents.contains(&p.path.segments[0].ident)
+                                }
                                 _ => true,
                             })
                     }
@@ -380,7 +382,7 @@ fn process_generics(
         w.predicates = w
             .predicates
             .into_iter()
-            .map(|pred| folder.fold_where_predicate(pred))
+            .map(|pred| folder.clone().fold_where_predicate(pred))
             .collect();
         w
     });
