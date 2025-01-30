@@ -83,7 +83,7 @@ pub fn type_trait(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
         pub trait #trait_name {
             type #ty;
         }
-        #[abstract_impl::abstract_impl(no_dummy)]
+        #[::abstract_impl::abstract_impl(no_dummy)]
         impl #impl_name<T> for #trait_name {
             type #ty = T;
         }
@@ -190,7 +190,7 @@ pub fn use_type(
     quote! {
         #trait_
         #[allow(non_camel_case_types)]
-        #[abstract_impl::abstract_impl]
+        #[::abstract_impl::abstract_impl]
         impl #impl_name<#(#item_names),*> for #name {
             #(#items)*
         }
