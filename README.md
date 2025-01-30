@@ -34,7 +34,9 @@ Features:
 ### A more elaborate showcase
 ```rust
 use abstract_impl::abstract_impl;
+/// This represents external crates supplying traits
 mod traits {
+    // Like ToString, but without blanket impls
     pub trait FormatToString {
         type Error;
         fn format_to_string(&self) -> Result<String, Self::Error>;
@@ -47,9 +49,12 @@ mod traits {
 }
 use traits::*;
 
+/// This represents external crates supplying
+/// implementations of those crates
 mod impls {
     use super::*;
 
+    // Opt-in ToString using Debug
     #[abstract_impl]
     impl FormatUsingDebug for FormatToString
     where
@@ -61,6 +66,7 @@ mod impls {
         }
     }
 
+    // If we can get a string we can just print it
     #[derive(Debug)]
     pub enum PrintUsingFormatErr<FormatErr> {
         Other,
@@ -77,6 +83,8 @@ mod impls {
             Ok(println!("{string}"))
         }
     }
+
+    // We can always just ignore self
     #[abstract_impl]
     impl PrintDummy for Print {
         type Error = ();
@@ -84,6 +92,8 @@ mod impls {
             Ok(println!("Hi"))
         }
     }
+    // Normally you would need to write this every time
+    // you make a custom Ord implementation
     #[abstract_impl(no_dummy)]
     impl PartialUsingOrd for std::cmp::PartialOrd
     where
@@ -96,15 +106,18 @@ mod impls {
 }
 use impls::*;
 
+// Our type we want to print
 #[derive(Debug)]
 struct Person {
     pub first_name: String,
     pub last_name: String,
 }
 
+// Automatic implementation of types
 impl_FormatUsingDebug!(Person);
 impl_PrintUsingFormat!(Person);
 
+// It works
 fn main() {
     Person {
         first_name: "Alice".to_string(),
@@ -269,5 +282,6 @@ associated types, that do not depend on Self (would get a type error otherwise),
  - 0.2.0 Reverse trait and name position (now impl Impl for Trait) and extended documentation
  - 0.2.1 Explanation on how it works, better errors and generics
  - 0.2.2 Better generic eliding (UseType pattern now kinda works)
+ - 0.2.3 Bugfixes and better docs
 ## License
 This code is MIT licensed.

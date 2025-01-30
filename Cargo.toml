@@ -7,7 +7,7 @@ readme = "README.md"
 keywords = ["abstract", "generic", "implementation", "traits", "macro"]
 categories = ["development-tools", "rust-patterns"]
 license = "MIT"
-version = "0.2.2"
+version = "0.2.3"
 edition = "2021"
 
 [dependencies]
