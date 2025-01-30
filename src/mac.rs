@@ -321,27 +321,29 @@ fn generic_to_arg(
                 .params
                 .clone()
                 .into_iter()
-                .map(|param| match param {
-                    GenericParam::Lifetime(l) => GenericArgument::Lifetime(l.lifetime),
-                    GenericParam::Type(t) => GenericArgument::Type(Type::Path(TypePath {
+                .filter_map(|param| match param {
+                    GenericParam::Lifetime(_) => None,
+                    GenericParam::Type(t) => Some(GenericArgument::Type(Type::Path(TypePath {
                         qself: None,
                         path: Path::from(t.ident),
-                    })),
-                    GenericParam::Const(c) => GenericArgument::Const(Expr::Const(ExprConst {
-                        attrs: vec![],
-                        const_token: c.const_token,
-                        block: Block {
-                            brace_token: Brace::default(),
-                            stmts: vec![Stmt::Expr(
-                                Expr::Path(ExprPath {
-                                    attrs: vec![],
-                                    qself: None,
-                                    path: Path::from(c.ident),
-                                }),
-                                None,
-                            )],
-                        },
-                    })),
+                    }))),
+                    GenericParam::Const(c) => {
+                        Some(GenericArgument::Const(Expr::Const(ExprConst {
+                            attrs: vec![],
+                            const_token: c.const_token,
+                            block: Block {
+                                brace_token: Brace::default(),
+                                stmts: vec![Stmt::Expr(
+                                    Expr::Path(ExprPath {
+                                        attrs: vec![],
+                                        qself: None,
+                                        path: Path::from(c.ident),
+                                    }),
+                                    None,
+                                )],
+                            },
+                        })))
+                    }
                 }),
         )
         .collect()
