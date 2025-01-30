@@ -1,5 +1,7 @@
 #![allow(clippy::needless_doctest_main)]
 #![doc = include_str!("../README.md")]
+use core::panic;
+
 use quote::{quote, ToTokens};
 use syn::punctuated::Punctuated;
 use syn::spanned::Spanned;
@@ -196,6 +198,66 @@ pub fn use_type(
     .into()
 }
 
+/// ```rust
+/// # use abstract_impl::use_field;
+/// #[use_field]
+/// trait SomeTrait {
+///   fn field(&mut self) -> &mut str;
+/// }
+/// struct Test {
+///   field: String,
+/// }
+/// impl_SomeTrait_with_field!(Test {field});
+/// ```
+#[proc_macro_attribute]
+pub fn use_field(
+    _attr: proc_macro::TokenStream,
+    item: proc_macro::TokenStream,
+) -> proc_macro::TokenStream {
+    use syn::ImplItem;
+    use syn::TraitItem;
+    let trait_ = parse_macro_input!(item as ItemTrait);
+    let name = trait_.ident.clone();
+    let macro_name = Ident::new(&format!("impl_{name}_with_field"), name.span());
+    let items = trait_.items.clone().into_iter().map(|item| match item {
+        TraitItem::Fn(syn::TraitItemFn { attrs, sig, .. }) => {
+            let (ref_, mut_) = match sig.inputs.first() {
+                Some(syn::FnArg::Receiver(r)) => (r.reference.clone(), r.mutability.clone()),
+                _ => panic!("All functions must take self"),
+            };
+            ImplItem::Fn(syn::ImplItemFn {
+                attrs,
+                vis: syn::Visibility::Inherited,
+                defaultness: None,
+                sig,
+                block: syn::Block {
+                    brace_token: syn::token::Brace::default(),
+                    stmts: vec![syn::Stmt::Expr(
+                        syn::Expr::Verbatim(match (ref_, mut_) {
+                            (Some((ref_, _)), Some(mut_)) => quote! {#ref_ #mut_ self.$e},
+                            (Some((ref_, _)), None) => quote! {#ref_ self.$e},
+                            _ => quote! {self.$e},
+                        }),
+                        None,
+                    )],
+                },
+            })
+        }
+        _ => panic!("Only functions can be used with use_field"),
+    });
+    quote! {
+        #trait_
+        #[macro_export]
+        macro_rules! #macro_name {
+            ($t:ty {$e:ident}) => {
+                impl #name for $t {
+                    #(#items)*
+                }
+            }
+        }
+    }
+    .into()
+}
 // DOCTESTS(hidden):
 /// ```rust
 /// use abstract_impl::abstract_impl;
