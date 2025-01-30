@@ -1,9 +1,9 @@
 #![allow(clippy::needless_doctest_main)]
 #![doc = include_str!("../README.md")]
-use quote::ToTokens;
+use quote::{quote, ToTokens};
 use syn::punctuated::Punctuated;
-use syn::token;
 use syn::{parse_macro_input, ItemImpl};
+use syn::{token, Ident};
 mod change_self;
 mod dummy;
 mod mac;
@@ -58,6 +58,34 @@ pub fn abstract_impl(
         Err(e) => return e.into_compile_error().into(),
     };
     res.to_token_stream().into()
+}
+
+/// Generates a TyType trait (has type Ty) with a generic TyUsingType<T> impl given a type name Ty.
+/// ```rust
+/// # use abstract_impl::type_trait;
+/// type_trait!(Ty);
+/// struct Test;
+/// impl_TyUsingType!(<u8> Test);
+/// fn main() {
+///   let x: <Test as TyType>::Ty = 5u8;
+/// # assert_eq!(x, 5);
+/// }
+/// ```
+#[proc_macro]
+pub fn type_trait(item: proc_macro::TokenStream) -> proc_macro::TokenStream {
+    let ty = parse_macro_input!(item as Ident);
+    let trait_name = Ident::new(&format!("{ty}Type"), ty.span());
+    let impl_name = Ident::new(&format!("{ty}UsingType"), ty.span());
+    quote! {
+        pub trait #trait_name {
+            type #ty;
+        }
+        #[abstract_impl::abstract_impl(no_dummy)]
+        impl #impl_name<T> for #trait_name {
+            type #ty = T;
+        }
+    }
+    .into()
 }
 
 // DOCTESTS(hidden):
