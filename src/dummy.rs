@@ -1,6 +1,7 @@
 use proc_macro2::Span;
 use quote::quote;
 use syn::{
+    fold::Fold,
     parse_quote,
     punctuated::Punctuated,
     spanned::Spanned,
@@ -18,7 +19,13 @@ pub fn generate_dummy_impl(
         qself: None,
         path: Path::from(Ident::new("Dummy", Span::call_site())),
     }));
-    imp.trait_ = Some((None, trait_, For::default()));
+    imp.trait_ = Some((None, trait_.clone(), For::default()));
+    let mut folder = crate::change_self::ChangeSelfToContext {
+        local_idents: std::collections::HashMap::new(),
+        replaced: false,
+        found_idents: std::collections::HashSet::new(),
+    };
+    folder.fold_path(trait_);
 
     let dummy_body: syn::Expr = parse_quote! {
         unreachable!()
@@ -51,25 +58,30 @@ pub fn generate_dummy_impl(
     imp.generics.where_clause = None;
     imp.generics.params = ty_generics
         .into_iter()
-        .map(|arg| match arg {
-            GenericArgument::Lifetime(l) => Ok(syn::GenericParam::Lifetime(syn::LifetimeParam {
-                attrs: vec![],
-                lifetime: l,
-                colon_token: None,
-                bounds: Punctuated::new(),
-            })),
-            GenericArgument::Type(Type::Path(p)) => Ok(syn::GenericParam::Type(syn::TypeParam {
-                attrs: vec![],
-                ident: p.path.segments[0].ident.clone(),
-                colon_token: None,
-                bounds: Punctuated::new(),
-                eq_token: None,
-                default: None,
-            })),
-            o => Err(Error::new(
+        .filter_map(|arg| match arg {
+            GenericArgument::Lifetime(l) => {
+                Some(Ok(syn::GenericParam::Lifetime(syn::LifetimeParam {
+                    attrs: vec![],
+                    lifetime: l,
+                    colon_token: None,
+                    bounds: Punctuated::new(),
+                })))
+            }
+            GenericArgument::Type(Type::Path(p)) => folder
+                .found_idents
+                .contains(&p.path.segments[0].ident)
+                .then_some(Ok(syn::GenericParam::Type(syn::TypeParam {
+                    attrs: vec![],
+                    ident: p.path.segments[0].ident.clone(),
+                    colon_token: None,
+                    bounds: Punctuated::new(),
+                    eq_token: None,
+                    default: None,
+                }))),
+            o => Some(Err(Error::new(
                 o.span(),
                 "Impl cannot have generics other than type or Lifetime",
-            )),
+            ))),
         })
         .chain(imp.generics.params.into_iter().map(Ok))
         .collect::<syn::Result<_>>()?;
