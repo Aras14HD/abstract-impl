@@ -285,3 +285,5 @@ associated types, that do not depend on Self (would get a type error otherwise),
  - 0.2.3 Bugfixes and better docs
 ## License
 This code is MIT licensed.
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/K3K24YX35)
